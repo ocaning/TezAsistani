@@ -32,14 +32,26 @@ function decryptKey(encodedText) {
 
 Office.onReady((info) => {
     if (info.host === Office.HostType.Word) {
-        const loginScreen = document.getElementById("login-screen");
-        const chatScreen = document.getElementById("chat-screen");
-        const apiKeyInput = document.getElementById("api-key-input");
-        const btnLogin = document.getElementById("btn-login");
-        const btnLogout = document.getElementById("btn-logout");
-        const btnSend = document.getElementById("btn-send");
-        const chatInput = document.getElementById("chat-input");
-        const chatMessages = document.getElementById("chat-messages");
+        // ... mevcut değişken tanımlamalarınız (loginScreen, chatScreen vb.) burada ...
+
+        // --- BURAYA EKLEYİN ---
+        window.chrome.webview.addEventListener('message', event => {
+            const data = event.data;
+
+            // Eğer mesaj tipi "wordContent" ise metni işle
+            if (data.type === 'wordContent') {
+                const receivedText = data.text;
+                console.log("Word'den gelen metin:", receivedText);
+
+                // DİKKAT: HTML dosyanızda <textarea id="myTextArea"></textarea> olduğundan emin olun!
+                const textArea = document.getElementById('myTextArea');
+                if (textArea) {
+                    textArea.value = receivedText;
+                } else {
+                    console.error("myTextArea bulunamadı!");
+                }
+            }
+        });
 
         checkAuth();
 
