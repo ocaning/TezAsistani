@@ -11,6 +11,7 @@ Kritik Kurallar:
 2. Word dokümanından gelen metnin hipotez sunumunu ve istatistiksel dilini tıp literatürüne (pasif akademik dile) uygun hale getir.
 3. Kanıta dayalı tıp ilkelerini koru, spekülasyondan kaçın.`;
 
+// --- Şifreleme Fonksiyonları ---
 function encryptKey(plainText) {
     let encrypted = "";
     for (let i = 0; i < plainText.length; i++) {
@@ -30,129 +31,138 @@ function decryptKey(encodedText) {
     } catch (e) { return null; }
 }
 
+// --- Ana Uygulama Mantığı ---
 Office.onReady((info) => {
-    if (info.host === Office.HostType.Word) {
-        // ... mevcut değişken tanımlamalarınız (loginScreen, chatScreen vb.) burada ...
+    // UI Elemanlarını Tanımla
+    const loginScreen = document.getElementById("login-screen");
+    const chatScreen = document.getElementById("chat-screen");
+    const apiKeyInput = document.getElementById("api-key-input");
+    const btnLogin = document.getElementById("btn-login");
+    const btnLogout = document.getElementById("btn-logout");
+    const btnSend = document.getElementById("btn-send");
+    const chatInput = document.getElementById("chat-input");
+    const chatMessages = document.getElementById("chat-messages");
+    const textArea = document.getElementById("myTextArea");
 
-        // --- BURAYA EKLEYİN ---
-        window.chrome.webview.addEventListener('message', event => {
-            const data = event.data;
-
-            // Eğer mesaj tipi "wordContent" ise metni işle
-            if (data.type === 'wordContent') {
-                const receivedText = data.text;
-                console.log("Word'den gelen metin:", receivedText);
-
-                // DİKKAT: HTML dosyanızda <textarea id="myTextArea"></textarea> olduğundan emin olun!
-                const textArea = document.getElementById('myTextArea');
-                if (textArea) {
-                    textArea.value = receivedText;
-                } else {
-                    console.error("myTextArea bulunamadı!");
-                }
+    // 1. WebView2 (C#) Köprüsünü Dinle
+    window.chrome.webview.addEventListener('message', event => {
+        const data = event.data;
+        if (data && data.type === 'wordContent') {
+            if (textArea) {
+                textArea.value = data.text;
+                console.log("Metin başarıyla aktarıldı.");
             }
-        });
+        }
+    });
 
-        checkAuth();
-
-        btnLogin.addEventListener("click", handleLogin);
-        btnLogout.addEventListener("click", handleLogout);
-        btnSend.addEventListener("click", handleSendMessage);
+    // 2. Buton Olaylarını Bağla
+    if (btnLogin) btnLogin.addEventListener("click", handleLogin);
+    if (btnLogout) btnLogout.addEventListener("click", handleLogout);
+    if (btnSend) btnSend.addEventListener("click", handleSendMessage);
+    if (chatInput) {
         chatInput.addEventListener("keypress", (e) => {
             if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
         });
+    }
 
-        function checkAuth() {
-            const encryptedKey = localStorage.getItem("tez_asistani_api_key_secure");
-            if (encryptedKey && encryptedKey.trim() !== "") {
-                const decryptedKey = decryptKey(encryptedKey);
-                if (decryptedKey && decryptedKey.startsWith("AIza")) {
-                    loginScreen.style.display = "none";
-                    chatScreen.style.display = "flex";
-                    if(chatMessages.innerHTML === "") appendSystemMessage("Sistem hazır. Word'den metin seçerek soru sorabilirsiniz.");
-                    return;
-                }
-            }
-            loginScreen.style.display = "flex";
-            chatScreen.style.display = "none";
-            apiKeyInput.value = "";
-        }
+    // 3. Başlatma
+    if (info.host === Office.HostType.Word) {
+        checkAuth();
+    }
 
-        function handleLogin() {
-            const key = apiKeyInput.value.trim();
-            if (key === "" || !key.startsWith("AIza")) {
-                alert("Lütfen AIza... ile başlayan geçerli bir Google AI Studio anahtarı giriniz.");
+    // --- Fonksiyonlar ---
+    function checkAuth() {
+        const encryptedKey = localStorage.getItem("tez_asistani_api_key_secure");
+        if (encryptedKey && encryptedKey.trim() !== "") {
+            const decryptedKey = decryptKey(encryptedKey);
+            if (decryptedKey && decryptedKey.startsWith("AIza")) {
+                loginScreen.style.display = "none";
+                chatScreen.style.display = "flex";
+                if(chatMessages.innerHTML === "") appendSystemMessage("Sistem hazır. Word'den metin seçerek soru sorabilirsiniz.");
                 return;
             }
-            localStorage.setItem("tez_asistani_api_key_secure", encryptKey(key));
+        }
+        loginScreen.style.display = "flex";
+        chatScreen.style.display = "none";
+    }
+
+    function handleLogin() {
+        const key = apiKeyInput.value.trim();
+        if (key === "" || !key.startsWith("AIza")) {
+            alert("Lütfen AIza... ile başlayan geçerli bir Google AI Studio anahtarı giriniz.");
+            return;
+        }
+        localStorage.setItem("tez_asistani_api_key_secure", encryptKey(key));
+        checkAuth();
+    }
+
+    function handleLogout() {
+        if (confirm("Oturumu kapatırsanız API anahtarınız bu bilgisayardan silinir. Emin misiniz?")) {
+            localStorage.removeItem("tez_asistani_api_key_secure");
+            chatMessages.innerHTML = "";
             checkAuth();
         }
-
-        function handleLogout() {
-            if (confirm("Oturumu kapatırsanız API anahtarınız bu bilgisayardan silinir. Emin misiniz?")) {
-                localStorage.removeItem("tez_asistani_api_key_secure");
-                chatMessages.innerHTML = "";
-                checkAuth();
-            }
-        }
-
-        async function getSelectedText() {
-            return new Promise((resolve) => {
-                Word.run(async (context) => {
-                    const selection = context.document.getSelection();
-                    selection.load("text");
-                    await context.sync();
-                    resolve(selection.text && selection.text.trim() !== "" ? selection.text.trim() : null);
-                }).catch(() => resolve(null));
-            });
-        }
-
-        async function handleSendMessage() {
-            const query = chatInput.value.trim();
-            if (query === "") return;
-
-            const apiKey = decryptKey(localStorage.getItem("tez_asistani_api_key_secure"));
-            if (!apiKey) { checkAuth(); return; }
-
-            appendUserMessage(query);
-            chatInput.value = "";
-            const loadingIndicator = appendLoadingMessage();
-
-            try {
-                const selectedText = await getSelectedText();
-                let promptContent = selectedText 
-                    ? `[Seçili Metin]:\n"${selectedText}"\n\n[Kullanıcı Talimatı]:\n${query}` 
-                    : `[Kullanıcı Talimatı]:\n${query}`;
-
-                const response = await fetch(`${GEMINI_API_ENDPOINT}?key=${apiKey}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{ role: "user", parts: [{ text: promptContent }] }],
-                        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-                        generationConfig: { temperature: 0.2, topP: 0.95 }
-                    })
-                });
-
-                removeMessageElement(loadingIndicator);
-                if (!response.ok) throw new Error("Ağ yanıtı başarısız veya kota aşıldı.");
-                
-                const data = await response.json();
-                const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (aiResponse) appendAiMessage(aiResponse);
-
-            } catch (error) {
-                removeMessageElement(loadingIndicator);
-                appendErrorMessage("Hata: İşlem gerçekleştirilemedi. Bağlantınızı kontrol edin.");
-            }
-        }
-
-        function appendUserMessage(text) { const msg = document.createElement("div"); msg.className = "message user-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
-        function appendAiMessage(text) { const msg = document.createElement("div"); msg.className = "message ai-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
-        function appendSystemMessage(text) { const msg = document.createElement("div"); msg.className = "message system-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
-        function appendErrorMessage(text) { const msg = document.createElement("div"); msg.className = "message error-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
-        function appendLoadingMessage() { const msg = document.createElement("div"); msg.className = "message ai-message system-message"; msg.innerText = "Akademik yanıt üretiliyor..."; chatMessages.appendChild(msg); scrollToBottom(); return msg; }
-        function removeMessageElement(element) { if (element && element.parentNode) element.parentNode.removeChild(element); }
-        function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
     }
+
+    async function getSelectedText() {
+        return new Promise((resolve) => {
+            Word.run(async (context) => {
+                const selection = context.document.getSelection();
+                selection.load("text");
+                await context.sync();
+                resolve(selection.text && selection.text.trim() !== "" ? selection.text.trim() : null);
+            }).catch(() => resolve(null));
+        });
+    }
+
+    async function handleSendMessage() {
+        const query = chatInput.value.trim();
+        if (query === "") return;
+
+        const apiKey = decryptKey(localStorage.getItem("tez_asistani_api_key_secure"));
+        if (!apiKey) { checkAuth(); return; }
+
+        appendUserMessage(query);
+        chatInput.value = "";
+        const loadingIndicator = appendLoadingMessage();
+
+        try {
+            // Öncelik sırası: myTextArea doluysa onu al, yoksa Word'den seçili metni al
+            const selectedText = (textArea && textArea.value.trim() !== "") ? textArea.value : await getSelectedText();
+            
+            let promptContent = selectedText 
+                ? `[Seçili Metin]:\n"${selectedText}"\n\n[Kullanıcı Talimatı]:\n${query}` 
+                : `[Kullanıcı Talimatı]:\n${query}`;
+
+            const response = await fetch(`${GEMINI_API_ENDPOINT}?key=${apiKey}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: [{ role: "user", parts: [{ text: promptContent }] }],
+                    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+                    generationConfig: { temperature: 0.2, topP: 0.95 }
+                })
+            });
+
+            removeMessageElement(loadingIndicator);
+            if (!response.ok) throw new Error("Ağ yanıtı başarısız.");
+            
+            const data = await response.json();
+            const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (aiResponse) appendAiMessage(aiResponse);
+
+        } catch (error) {
+            removeMessageElement(loadingIndicator);
+            appendErrorMessage("Hata: İşlem gerçekleştirilemedi.");
+        }
+    }
+
+    // Yardımcı UI Fonksiyonları
+    function appendUserMessage(text) { const msg = document.createElement("div"); msg.className = "message user-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
+    function appendAiMessage(text) { const msg = document.createElement("div"); msg.className = "message ai-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
+    function appendSystemMessage(text) { const msg = document.createElement("div"); msg.className = "message system-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
+    function appendErrorMessage(text) { const msg = document.createElement("div"); msg.className = "message error-message"; msg.innerText = text; chatMessages.appendChild(msg); scrollToBottom(); }
+    function appendLoadingMessage() { const msg = document.createElement("div"); msg.className = "message ai-message system-message"; msg.innerText = "Akademik yanıt üretiliyor..."; chatMessages.appendChild(msg); scrollToBottom(); return msg; }
+    function removeMessageElement(element) { if (element && element.parentNode) element.parentNode.removeChild(element); }
+    function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
 });
